@@ -6,7 +6,6 @@ This package can load today's showings directly from Indy instead of
 uploading `BLOAD.txt` over FTP. Configure it to match an Indy signage
 showings list URL such as:
 
-`https://signage-us.indy.systems/showings-list/338?movies-per-page=4&interval=5000&showings-hide-poster=true&display-showing-badges=true&show-logo=false&hide-past=false`
 
 In the setup options:
 
