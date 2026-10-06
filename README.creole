@@ -9,7 +9,7 @@ showings list URL such as:
 
 In the setup options:
 
-* **Indy site ID**: `338` (theater-wide showtimes, not a single screen)
+* **Indy site ID**: `xxx` (theater-wide showtimes, not a single screen)
 * **Movies per page**: `4`
 * **Page interval (seconds)**: `5`
 * **Hide posters**: on (matches `showings-hide-poster=true`)
