@@ -1,4 +1,4 @@
-# INDY Bload v2
+# INDY-Bload-v2
 
 Lobby showtimes board for [info-beamer](https://info-beamer.com) Raspberry Pi players,
 fed live from the Indy GraphQL API (with the legacy BLOAD.txt-over-FTP mode as a fallback).

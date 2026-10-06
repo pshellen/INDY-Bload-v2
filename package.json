@@ -1,5 +1,5 @@
 {
-    "name": "INDY Bload v2",
+    "name": "INDY-Bload-v2",
     "author": "Florian Wesch <fw@dividuum.de>",
     "desc": "Lobby showtimes board from the Indy API: title-art cards, Flagship/Harbor East brands, 3D/OC/SF badges. BLOAD.txt FTP fallback.",
     "platforms": [
