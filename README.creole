@@ -1,0 +1,36 @@
+= BLOAD player
+
+== Indy showings list
+
+This package can load today's showings directly from Indy instead of
+uploading `BLOAD.txt` over FTP. Configure it to match an Indy signage
+showings list URL such as:
+
+`https://signage-us.indy.systems/showings-list/338?movies-per-page=4&interval=5000&showings-hide-poster=true&display-showing-badges=true&show-logo=false&hide-past=false`
+
+In the setup options:
+
+* **Indy site ID**: `338` (theater-wide showtimes, not a single screen)
+* **Movies per page**: `4`
+* **Page interval (seconds)**: `5`
+* **Hide posters**: on (matches `showings-hide-poster=true`)
+* **Display showing badges**: on
+* **Show logo in empty cells**: off (matches `show-logo=false`)
+* **Hide past showings**: off (matches `hide-past=false`)
+
+The player polls the Indy GraphQL API and writes `showings.json` for the
+display. FTP remains available as an optional fallback if you set an FTP
+password and leave Indy disabled.
+
+== Legacy FTP mode
+
+Create a new setup based on this package. Once installed, you may upload
+`BLOAD.txt` to the device's FTP server on port 2121 when FTP is enabled.
+
+Upload movie images as assets and assign them to the Movie images list if
+you turn off **Hide posters**.
+
+== Configuration
+
+Set the device timezone to match your theater. For portrait mounts, set
+rotation in the device setup.

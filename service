@@ -1,0 +1,277 @@
+#!/usr/bin/python2.7
+import datetime, pytz, time, threading, os, logging, shutil, traceback, json, requests
+from hosted import CONFIG, NODE
+CONFIG.restart_on_update()
+
+from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.servers import FTPServer
+from pyftpdlib.authorizers import DummyAuthorizer
+from pyftpdlib.filesystems import AbstractedFS, FilesystemError
+
+GRAPHQL = "https://api-us.indy.systems/graphql"
+UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
+
+class RestrictedFS(AbstractedFS):
+    def can_access(self, filename):
+        return filename == "BLOAD.txt"
+
+    def open(self, filename, mode):
+        if not self.can_access(os.path.basename(filename)):
+            raise FilesystemError("Cannot access %s. Only BLOAD.txt can be modified" % (
+                os.path.basename(filename)))
+        if 'w' in mode:
+            filename += ".temp"
+        return super(RestrictedFS, self).open(filename, mode)
+
+    def remove(self, path):
+        if self.can_access(os.path.basename(path)):
+            super(RestrictedFS, self).remove(path)
+
+    def listdir(self, path):
+        return [
+            filename for filename
+            in super(RestrictedFS, self).listdir(path)
+            if self.can_access(filename)
+        ]
+
+class MyHandler(FTPHandler):
+    def on_file_received(self, file):
+        target = file.replace(".temp", "")
+        with open(file, 'rb') as f:
+            bload = f.read().decode('windows-1252')
+        with open(file, 'wb') as f:
+            f.write(bload.encode('utf8'))
+        os.rename(file, target)
+        shutil.copyfile(target, os.path.join(os.environ['SCRATCH'], os.path.basename(target)))
+        os.system("sync")
+
+    def on_incomplete_file_received(self, file):
+        os.remove(file)
+
+def cfg(name, default=None):
+    try:
+        return CONFIG[name]
+    except KeyError:
+        return default
+
+def current_time():
+    now = datetime.datetime.utcnow()
+    now = now.replace(tzinfo=pytz.utc)
+    now = now.astimezone(pytz.timezone(CONFIG['timezone']))
+    now = now.replace(tzinfo=None)
+    return now.strftime("%m/%d/%y"), now
+
+def send_clock():
+    date, now = current_time()
+    NODE.send('/date/set:%s' % date)
+
+    since_midnight = (
+        now -
+        now.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    seconds_since_midnight = since_midnight.seconds + since_midnight.microseconds / 1000000.
+    NODE.send('/clock/set:%d' % seconds_since_midnight)
+
+    try:
+        s = os.stat("BLOAD.txt")
+        bload_age = time.time() - s.st_mtime
+        NODE.send('/age/set:%d' % bload_age)
+    except:
+        pass
+
+def fetch_indy(site_id):
+    r = requests.post(
+        GRAPHQL,
+        headers={
+            'User-Agent': UA,
+            'Accept': 'application/graphql-response+json',
+            'Content-Type': 'application/json',
+        },
+        timeout=10,
+        data=json.dumps({
+            'query': (
+                '{ site(id: %s) { name todaysShowings { time current past '
+                'showingBadges { id title displayName } '
+                'movie { name rating ratingReason posterImage } } } }'
+            ) % int(site_id),
+        }),
+    )
+    r.raise_for_status()
+    payload = r.json()
+    return payload['data']['site']
+
+def badge_is_3d(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return title == '3d' or title.startswith('3d ') or ' 3d' in title
+
+def badge_is_sensory(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return 'sensory' in title
+
+def badge_is_open_caption(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return (
+        'open caption' in title
+        or title in ('oc', 'open captions', 'open captioning', 'open captioned')
+    )
+
+def show_badge_flags(badges):
+    badges = badges or []
+    return {
+        'threed': any(badge_is_3d(badge) for badge in badges),
+        'sensory': any(badge_is_sensory(badge) for badge in badges),
+        'open_caption': any(badge_is_open_caption(badge) for badge in badges),
+    }
+
+def is_showtime_badge_label(label):
+    lower = label.lower()
+    return (
+        lower == '3d'
+        or lower.startswith('3d ')
+        or 'sensory' in lower
+        or 'open caption' in lower
+        or lower in ('oc', 'open captions', 'open captioning', 'open captioned')
+    )
+
+def merge_showtimes(shows):
+    merged = {}
+    for show in shows:
+        key = show['offset']
+        if key not in merged:
+            merged[key] = dict(show)
+            continue
+        existing = merged[key]
+        existing['threed'] = existing.get('threed') or show.get('threed')
+        existing['sensory'] = existing.get('sensory') or show.get('sensory')
+        existing['open_caption'] = existing.get('open_caption') or show.get('open_caption')
+    return sorted(merged.values(), key=lambda s: s['offset'])
+
+def showtime_parts(dt):
+    hour, minute = dt.hour, dt.minute
+    suffix = 'am' if hour < 12 else 'pm'
+    display_hour = (hour - 1) % 12 + 1
+    return {
+        'hour': hour,
+        'minute': minute,
+        'offset': hour * 60 + minute,
+        'string': '%d:%02d%s' % (display_hour, minute, suffix),
+    }
+
+def parse_indy_showings(site):
+    tz = pytz.timezone(CONFIG['timezone'])
+    hide_past = cfg('hide_past', False)
+    movies = {}
+
+    for show in site.get('todaysShowings', []):
+        if hide_past and show.get('past'):
+            continue
+
+        movie = show['movie']
+        name = movie['name']
+        if name not in movies:
+            movies[name] = {
+                'name': name,
+                'image': ''.join(ch for ch in name.lower() if ch.isalnum()),
+                'mpaa': (movie.get('rating') or '').strip(),
+                'badges': [],
+                'shows': [],
+            }
+
+        entry = movies[name]
+        for badge in (show.get('showingBadges') or []):
+            label = (badge.get('displayName') or badge.get('title') or '').strip()
+            if label and not is_showtime_badge_label(label) and label not in entry['badges']:
+                entry['badges'].append(label)
+
+        dt = datetime.datetime.strptime(show['time'], "%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.replace(tzinfo=pytz.utc).astimezone(tz).replace(tzinfo=None)
+        parts = showtime_parts(dt)
+        parts['past'] = bool(show.get('past'))
+        parts['seats'] = 100
+        parts['sold'] = 0
+        parts.update(show_badge_flags(show.get('showingBadges')))
+        entry['shows'].append(parts)
+
+    sorted_movies = sorted(movies.values(), key=lambda m: m['name'].lower())
+    for movie in sorted_movies:
+        movie['shows'] = merge_showtimes(movie['shows'])
+
+    return {
+        'source': 'indy',
+        'site': site.get('name') or '',
+        'movies': sorted_movies,
+        'movies_per_page': int(cfg('movies_per_page', 4)),
+        'page_interval': max(1, int(cfg('page_interval', 5))),
+        'hide_poster': bool(cfg('hide_poster', True)),
+        'display_badges': bool(cfg('display_badges', True)),
+        'show_logo': bool(cfg('show_logo', False)),
+    }
+
+def write_showings(payload):
+    with open('showings.json', 'wb') as f:
+        f.write(json.dumps(payload, separators=(',', ':')))
+
+def indy_site_id():
+    return cfg('indy_site_id') or cfg('indy_screen_id')
+
+def indy_thread():
+    site_id = indy_site_id()
+    if not site_id:
+        print >>sys.stderr, "indy_site_id not configured; Indy sync disabled"
+        return
+
+    poll = max(30, int(cfg('indy_poll_interval', 120)))
+    print >>sys.stderr, "Indy sync enabled for site %s" % site_id
+
+    while 1:
+        try:
+            site = fetch_indy(site_id)
+            write_showings(parse_indy_showings(site))
+            NODE.send('/age/set:0')
+            NODE.send('/source/set:indy')
+        except Exception:
+            traceback.print_exc()
+        time.sleep(poll)
+
+def ftp_thread():
+    try:
+        for fname in ('BLOAD.txt',):
+            shutil.copyfile(os.path.join(os.environ['SCRATCH'], fname), fname)
+    except Exception:
+        traceback.print_exc()
+
+    authorizer = DummyAuthorizer()
+    if CONFIG['ftp_password']:
+        authorizer.add_user('bload', CONFIG['ftp_password'], homedir='.', perm='elrdw')
+
+    handler = MyHandler
+    handler.authorizer = authorizer
+    handler.banner = "BLOAD ftp server"
+    handler.abstracted_fs = RestrictedFS
+
+    channel = logging.StreamHandler()
+    logger = logging.getLogger('pyftpdlib')
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(channel)
+
+    server = FTPServer(('0.0.0.0', 2121), handler)
+    server.serve_forever()
+
+def main():
+    if indy_site_id():
+        indy = threading.Thread(target=indy_thread)
+        indy.daemon = True
+        indy.start()
+
+    if cfg('ftp_password'):
+        ftp = threading.Thread(target=ftp_thread)
+        ftp.daemon = True
+        ftp.start()
+
+    while 1:
+        send_clock()
+        time.sleep(5)
+
+if __name__ == "__main__":
+    import sys
+    main()

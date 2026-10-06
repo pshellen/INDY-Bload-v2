@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BLOAD Indy — Grid Preview</title>
+  <style>
+    :root {
+      --bg-cell: #808080;
+      --bg-times: #1a1a1a;
+      --bg-info: #fff;
+      --text-dark: #000;
+      --text-light: #fff;
+      --text-past: #888;
+      --text-warn: #ffcc33;
+      --text-soldout: #ff3333;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #1a1a1a;
+      color: #eee;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #aaa;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      max-width: 960px;
+    }
+
+    .toolbar label { font-size: 12px; color: #888; }
+
+    .toolbar input,
+    .toolbar select,
+    .toolbar button {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #eee;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .toolbar button {
+      cursor: pointer;
+      background: #027ac1;
+      border-color: #027ac1;
+    }
+
+    .status { font-size: 12px; color: #888; min-height: 1.2em; }
+    .status.error { color: #f66; }
+
+    .stage-wrap {
+      width: min(960px, 100%);
+      background: #111;
+      border: 1px solid #333;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .stage {
+      width: 1920px;
+      height: 1080px;
+      transform-origin: top left;
+      background: #000;
+      position: relative;
+      display: grid;
+      gap: 0;
+    }
+
+    .cell {
+      background: var(--bg-cell);
+      border: 1px solid #000;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .cell.empty {
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+    }
+
+    .cell.empty img {
+      max-width: 70%;
+      max-height: 70%;
+      object-fit: contain;
+    }
+
+    .poster-area {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1px;
+      background: var(--bg-cell);
+    }
+
+    .poster-area img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .title-fallback {
+      color: var(--text-dark);
+      font-weight: 700;
+      text-align: center;
+      padding: 8px;
+      line-height: 1.1;
+      word-break: break-word;
+    }
+
+    .info-line {
+      background: var(--bg-info);
+      color: var(--text-dark);
+      min-height: 50px;
+      padding: 8px 6px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .info-line.has-badges { min-height: 72px; }
+
+    .info-top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .badge-3d {
+      height: 30px;
+      width: auto;
+    }
+
+    .badge-row {
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.2;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .times {
+      background: #000;
+      flex: 1 1 0;
+      display: grid;
+      gap: 0;
+      padding: 0;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .time {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
+      background: var(--bg-times);
+      border: 1px solid #000;
+      color: var(--text-light);
+      font-weight: 700;
+      position: relative;
+      line-height: 1;
+      padding: 2px;
+    }
+
+    .time-contents {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      max-width: 100%;
+      flex-wrap: nowrap;
+    }
+
+    .time.past .time-label {
+      position: relative;
+    }
+
+    .time.past .time-label::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 2px;
+      background: currentColor;
+      transform: translateY(-50%);
+    }
+
+    .time-3d {
+      width: auto;
+      flex-shrink: 0;
+      display: block;
+      object-fit: contain;
+    }
+
+    .time-tag {
+      font-weight: 700;
+      line-height: 1;
+      padding: 0.2em 0.4em;
+      border-radius: 2px;
+      color: #fff;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .time-tag.sensory { background: #0a8c2e; }
+    .time-tag.caption { background: #027ac1; }
+
+    .time.past { color: var(--text-past); }
+    .time.warn { color: var(--text-warn); }
+    .time.soldout { color: var(--text-soldout); }
+
+    .note {
+      max-width: 960px;
+      font-size: 12px;
+      color: #777;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>BLOAD Indy grid preview</h1>
+
+  <div class="toolbar">
+    <label for="siteId">Site ID</label>
+    <input id="siteId" type="number" value="338" min="1" />
+    <label for="rotation">Rotation</label>
+    <select id="rotation">
+      <option value="0" selected>0°</option>
+      <option value="90">90°</option>
+      <option value="180">180°</option>
+      <option value="270">270°</option>
+    </select>
+    <label for="moviesPerPage">Movies/page</label>
+    <input id="moviesPerPage" type="number" value="4" min="1" max="12" />
+    <label for="pageInterval">Page interval (s)</label>
+    <input id="pageInterval" type="number" value="5" min="1" max="60" />
+    <label><input id="hidePoster" type="checkbox" checked /> Hide posters</label>
+    <label><input id="displayBadges" type="checkbox" checked /> Badges</label>
+    <label><input id="showLogo" type="checkbox" /> Logo in empty cells</label>
+    <label><input id="hidePast" type="checkbox" /> Hide past</label>
+    <button id="loadBtn" type="button">Load live data</button>
+  </div>
+
+  <div class="status" id="status">Loading…</div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage" id="stage"></div>
+  </div>
+
+  <p class="note">
+    Matches the BLOAD <code>node.lua</code> grid: gray movie area, white rating/badges bar,
+    dark showtime grid. Pages rotate automatically using the interval above.
+    Defaults match signage <code>showings-list/338</code>.
+  </p>
+
+  <script>
+    const NATIVE_W = 1920;
+    const NATIVE_H = 1080;
+    const statusEl = document.getElementById("status");
+    const stage = document.getElementById("stage");
+    let showings = null;
+    let pageTimer = null;
+
+    function logicalSize(rotation) {
+      if (rotation === 90 || rotation === 270) {
+        return { w: NATIVE_H, h: NATIVE_W };
+      }
+      return { w: NATIVE_W, h: NATIVE_H };
+    }
+
+    function layouter(rotation, numShows) {
+      if (rotation === 90 || rotation === 270) {
+        if (numShows <= 3) return [1, 3];
+        if (numShows <= 8) return [2, 4];
+        if (numShows <= 10) return [2, 5];
+        if (numShows <= 15) return [3, 5];
+        return [3, 6];
+      }
+      if (numShows <= 4) return [2, 2];
+      if (numShows <= 6) return [3, 2];
+      if (numShows <= 9) return [3, 3];
+      if (numShows <= 12) return [4, 3];
+      if (numShows <= 16) return [4, 4];
+      return [5, 4];
+    }
+
+    function timeGrid(count) {
+      if (count <= 1) return [1, 1];
+      if (count <= 2) return [2, 1];
+      if (count <= 4) return [2, 2];
+      if (count <= 6) return [3, 2];
+      if (count <= 9) return [3, 3];
+      if (count <= 15) return [5, 3];
+      if (count <= 18) return [6, 3];
+      if (count <= 20) return [5, 4];
+      if (count <= 24) return [6, 4];
+      return [6, 5];
+    }
+
+    function currentOffsetMinutes() {
+      const now = new Date();
+      return now.getHours() * 60 + now.getMinutes();
+    }
+
+    function pagedMovies(data) {
+      const all = data.movies || [];
+      const perPage = data.movies_per_page || 4;
+      if (all.length <= perPage) return all;
+      const pages = Math.max(1, Math.ceil(all.length / perPage));
+      const interval = Math.max(1, data.page_interval || 5);
+      const page = Math.floor(Date.now() / (interval * 1000)) % pages;
+      const start = page * perPage;
+      return all.slice(start, start + perPage);
+    }
+
+    function fitTitle(text, maxWidth) {
+      let size = 60;
+      const probe = document.createElement("span");
+      probe.style.visibility = "hidden";
+      probe.style.position = "absolute";
+      probe.style.fontWeight = "700";
+      probe.textContent = text;
+      document.body.appendChild(probe);
+      while (size > 18) {
+        probe.style.fontSize = size + "px";
+        if (probe.offsetWidth <= maxWidth - 10) break;
+        size -= 5;
+      }
+      document.body.removeChild(probe);
+      return size;
+    }
+
+    function badgesEnabled() {
+      return document.getElementById("displayBadges").checked;
+    }
+
+    function showtimeReserve(show, cfg, showH) {
+      if (!cfg.display_badges) return 0;
+      let reserve = 0;
+      const gap = 4;
+      const tagSize = Math.max(12, Math.floor(showH * 0.28));
+      const iconH = Math.max(16, Math.floor(showH * 0.38));
+      if (show.threed) reserve += iconH * (920 / 716) + gap;
+      if (show.sensory) reserve += tagSize * 3.2 + gap;
+      if (show.open_caption) reserve += tagSize * 1.8 + gap;
+      return reserve;
+    }
+
+    function showtimeExtras(show, cfg, showH) {
+      if (!cfg.display_badges) return "";
+      const tagSize = Math.max(12, Math.floor(showH * 0.28));
+      const iconH = Math.max(16, Math.floor(showH * 0.38));
+      let html = "";
+      if (show.threed) {
+        html += `<img class="time-3d" src="3D.png" alt="3D" style="height:${iconH}px" />`;
+      }
+      if (show.sensory) {
+        html += `<span class="time-tag sensory" style="font-size:${tagSize}px">SENS</span>`;
+      }
+      if (show.open_caption) {
+        html += `<span class="time-tag caption" style="font-size:${tagSize}px">OC</span>`;
+      }
+      return html;
+    }
+
+    function timeFontSize(showW, showH, timeString, reserve) {
+      const len = Math.max(4, (timeString || "12:00pm").length);
+      return Math.max(14, Math.floor(Math.min((showW - reserve) / (len * 0.62), showH * 0.62)));
+    }
+
+    function renderCell(movie, cellW, cellH, cfg) {
+      const split = Math.min(cellH - 150, cellH / 1.5);
+      const cellCfg = { ...cfg, display_badges: badgesEnabled() };
+      const infoH = cellCfg.display_badges && movie.badges?.length ? 72 : 50;
+      const [timeCols, timeRows] = timeGrid(movie.shows.length);
+      const showW = cellW / timeCols;
+      const showH = (cellH - split - infoH) / timeRows;
+      const now = currentOffsetMinutes();
+
+      let posterHtml;
+      if (!cfg.hide_poster && movie.poster) {
+        posterHtml = `<img alt="" src="${movie.poster}" />`;
+      } else {
+        const titleSize = fitTitle(movie.name, cellW);
+        posterHtml = `<div class="title-fallback" style="font-size:${titleSize}px">${movie.name}</div>`;
+      }
+
+      const badgeHtml = cellCfg.display_badges && movie.badges?.length
+        ? `<div class="badge-row">${movie.badges.join("  ")}</div>`
+        : "";
+
+      const times = movie.shows.map((show) => {
+        let cls = "time";
+        const started = now > show.offset + 15 || show.past;
+        if (started) cls += " past";
+        else if (show.seats === 0) cls += " soldout";
+        else if (show.seats <= 20) cls += " warn";
+        const reserve = showtimeReserve(show, cellCfg, showH);
+        const extras = showtimeExtras(show, cellCfg, showH);
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><div class="time-contents"><span class="time-label">${show.string}</span>${extras}</div></div>`;
+      }).join("");
+
+      return `
+        <div class="cell">
+          <div class="poster-area" style="height:${split}px;flex:0 0 ${split}px">${posterHtml}</div>
+          <div class="info-line ${badgeHtml ? "has-badges" : ""}">
+            <div class="info-top">
+              <span>${movie.mpaa || "&nbsp;"}</span>
+            </div>
+            ${badgeHtml}
+          </div>
+          <div class="times" style="grid-template-columns:repeat(${timeCols},1fr);grid-template-rows:repeat(${timeRows},1fr)">
+            ${times}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEmpty(cfg) {
+      if (cfg.show_logo) {
+        return `<div class="cell empty"><img src="flagship.png" alt="Logo" /></div>`;
+      }
+      return `<div class="cell empty"></div>`;
+    }
+
+    function render(data) {
+      const rotation = Number(document.getElementById("rotation").value);
+      const { w, h } = logicalSize(rotation);
+      const movies = pagedMovies(data);
+      const pageSize = Math.max(data.movies_per_page || 4, movies.length || 1);
+      const [cols, rows] = layouter(rotation, pageSize);
+      const cellW = w / cols;
+      const cellH = h / rows;
+      const slots = cols * rows;
+
+      let html = "";
+      for (let i = 0; i < slots; i++) {
+        const movie = movies[i];
+        html += movie ? renderCell(movie, cellW, cellH, data) : renderEmpty(data);
+      }
+
+      stage.style.width = w + "px";
+      stage.style.height = h + "px";
+      stage.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      stage.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+      stage.innerHTML = html;
+
+      const wrap = document.getElementById("stageWrap");
+      const maxW = Math.min(960, window.innerWidth - 48);
+      const scale = maxW / (rotation === 90 || rotation === 270 ? NATIVE_W : w);
+      wrap.style.width = (rotation === 90 || rotation === 270 ? NATIVE_W : w) * scale + "px";
+      wrap.style.height = (rotation === 90 || rotation === 270 ? NATIVE_H : h) * scale + "px";
+
+      if (rotation === 90 || rotation === 270) {
+        const ox = (NATIVE_W - w) / 2;
+        const oy = (NATIVE_H - h) / 2;
+        stage.style.transformOrigin = `${w / 2}px ${h / 2}px`;
+        stage.style.transform = `translate(${ox}px, ${oy}px) rotate(${rotation}deg) scale(${scale})`;
+        stage.style.position = "absolute";
+        stage.style.left = ((maxW - w * scale) / 2) + "px";
+        stage.style.top = ((NATIVE_H * scale - h * scale) / 2) + "px";
+      } else {
+        stage.style.position = "absolute";
+        stage.style.left = "0";
+        stage.style.top = "0";
+        stage.style.transformOrigin = "top left";
+        stage.style.transform = `scale(${scale})`;
+      }
+
+      const pageCount = Math.max(1, Math.ceil((data.movies?.length || 0) / (data.movies_per_page || 4)));
+      statusEl.className = "status";
+      statusEl.textContent = `${data.site || "Site"} · ${data.movies.length} movie(s) · page ${Math.floor(Date.now() / ((data.page_interval || 5) * 1000)) % pageCount + 1}/${pageCount}`;
+    }
+
+    function queryParams() {
+      const params = new URLSearchParams({
+        timezone: "US/Eastern",
+        movies_per_page: document.getElementById("moviesPerPage").value,
+        page_interval: document.getElementById("pageInterval").value,
+        hide_poster: document.getElementById("hidePoster").checked ? "1" : "0",
+        display_badges: document.getElementById("displayBadges").checked ? "1" : "0",
+        show_logo: document.getElementById("showLogo").checked ? "1" : "0",
+        hide_past: document.getElementById("hidePast").checked ? "1" : "0",
+      });
+      return params.toString();
+    }
+
+    async function loadShowings() {
+      if (window.location.protocol === "file:") {
+        statusEl.className = "status error";
+        statusEl.textContent = "Open via the preview server, not as a file. Run: python3 preview_server.py then visit http://127.0.0.1:8765/preview.html";
+        return;
+      }
+
+      const id = document.getElementById("siteId").value;
+      statusEl.className = "status";
+      statusEl.textContent = `Fetching site ${id}…`;
+      try {
+        const r = await fetch(`/api/showings/${id}?${queryParams()}`);
+        const json = await r.json();
+        if (!r.ok || json.error) {
+          throw new Error(json.error?.message || `Request failed (${r.status})`);
+        }
+        if (!json.movies?.length) {
+          throw new Error("No movies returned for this site ID");
+        }
+        showings = json;
+        render(showings);
+      } catch (err) {
+        statusEl.className = "status error";
+        const msg = String(err.message || err);
+        if (msg === "Failed to fetch") {
+          statusEl.textContent = "Cannot reach preview server. Run: python3 preview_server.py";
+        } else {
+          statusEl.textContent = msg;
+        }
+      }
+    }
+
+    function restartPageTimer() {
+      if (pageTimer) clearInterval(pageTimer);
+      if (!showings) return;
+      const ms = Math.max(1, showings.page_interval || 5) * 1000;
+      pageTimer = setInterval(() => render(showings), ms);
+    }
+
+    document.getElementById("loadBtn").addEventListener("click", () => {
+      loadShowings().then(restartPageTimer);
+    });
+    ["rotation", "moviesPerPage", "pageInterval", "hidePoster", "displayBadges", "showLogo", "hidePast"].forEach((id) => {
+      document.getElementById(id).addEventListener("change", () => {
+        loadShowings().then(restartPageTimer);
+      });
+    });
+    window.addEventListener("resize", () => showings && render(showings));
+
+    loadShowings().then(restartPageTimer);
+  </script>
+</body>
+</html>

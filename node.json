@@ -1,0 +1,224 @@
+{
+    "name": "BLOAD player",
+    "permissions": {
+        "network": "Fetches Indy showings and optional FTP uploads"
+    },
+    "control_ui": "control.html",
+    "options": [{
+        "title": "Indy showings list",
+        "type": "section"
+    }, {
+        "title": "Indy site ID",
+        "ui_width": 3,
+        "name": "indy_site_id",
+        "type": "integer",
+        "hint": "Site ID from signage-us.indy.systems/showings-list/ID (e.g. 338 for all showtimes)",
+        "default": 338
+    }, {
+        "title": "Movies per page",
+        "ui_width": 3,
+        "name": "movies_per_page",
+        "type": "integer",
+        "default": 4
+    }, {
+        "title": "Page interval (seconds)",
+        "ui_width": 3,
+        "name": "page_interval",
+        "type": "integer",
+        "hint": "Matches interval=5000 ms in Indy signage (5 seconds)",
+        "default": 5
+    }, {
+        "title": "Hide past showings",
+        "ui_width": 3,
+        "name": "hide_past",
+        "type": "boolean",
+        "default": false
+    }, {
+        "title": "Hide posters",
+        "ui_width": 3,
+        "name": "hide_poster",
+        "type": "boolean",
+        "hint": "Matches showings-hide-poster=true",
+        "default": true
+    }, {
+        "title": "Display showing badges",
+        "ui_width": 3,
+        "name": "display_badges",
+        "type": "boolean",
+        "default": true
+    }, {
+        "title": "Show logo in empty cells",
+        "ui_width": 3,
+        "name": "show_logo",
+        "type": "boolean",
+        "hint": "Matches show-logo=false when off",
+        "default": false
+    }, {
+        "title": "Indy poll interval (seconds)",
+        "ui_width": 3,
+        "name": "indy_poll_interval",
+        "type": "integer",
+        "default": 120
+    }, {
+        "title": "Brand",
+        "ui_width": 3,
+        "name": "brand",
+        "type": "select",
+        "options": [
+            ["flagship", "Flagship Cinemas"],
+            ["harbor_east", "Harbor East Cinemas"]
+        ],
+        "default": "flagship"
+    }, {
+        "title": "Show brand header",
+        "ui_width": 3,
+        "name": "show_header",
+        "type": "boolean",
+        "hint": "Slim strip across the top with the brand logo and the current time",
+        "default": true
+    }, {
+        "title": "Harbor East logo",
+        "ui_width": 3,
+        "name": "harbor_east_logo",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Used when Brand is Harbor East. The Flagship brand uses the Logo setting below.",
+        "default": "harbor-east.png"
+    }, {
+        "title": "Tall card above N showtimes",
+        "ui_width": 3,
+        "name": "wide_threshold",
+        "type": "integer",
+        "hint": "A movie with more showtimes than this gets a double-height card. 0 turns it off.",
+        "default": 8
+    }, {
+        "title": "Board style",
+        "ui_width": 3,
+        "name": "board_style",
+        "type": "select",
+        "options": [
+            ["refined", "Refined (white rating bar)"],
+            ["minimal", "Minimal marquee"],
+            ["premium", "Premium (glow + frame)"]
+        ],
+        "default": "premium"
+    }, {
+        "title": "Show Reserved Seating",
+        "ui_width": 3,
+        "name": "show_reserved_seating",
+        "type": "boolean",
+        "hint": "Show the Reserved Seating feature under each title",
+        "default": true
+    }, {
+        "title": "Theater Ears logo",
+        "ui_width": 3,
+        "name": "theater_ears_logo",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Shown instead of the words Theater Ears. White on transparent PNG works on every style.",
+        "default": "theater-ears.png"
+    }, {
+        "title": "3D badge",
+        "ui_width": 3,
+        "name": "threed_icon",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Shown next to 3D showtimes.",
+        "default": "badge-3d.png"
+    }, {
+        "title": "Open Caption badge",
+        "ui_width": 3,
+        "name": "open_caption_icon",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Shown next to open-caption showtimes.",
+        "default": "open-caption.png"
+    }, {
+        "title": "Sensory Friendly badge",
+        "ui_width": 3,
+        "name": "sensory_icon",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Shown next to sensory-friendly showtimes.",
+        "default": "badge-sf.png"
+    }, {
+        "title": "Movie images",
+        "type": "section"
+    }, {
+        "title": "Optional poster images when Hide posters is off",
+        "name": "images",
+        "type": "list",
+        "itemname": "Movie image",
+        "items": [{
+            "title": "Image",
+            "ui_width": 6,
+            "name": "file",
+            "type": "resource",
+            "valid": ["image"],
+            "default": "empty.png"
+        }]
+    }, {
+        "title": "Player settings",
+        "type": "section"
+    }, {
+        "title": "Default rotation",
+        "ui_width": 4,
+        "name": "rotation",
+        "type": "select",
+        "options": [
+            [0, "No rotation"],
+            [90, "90 degree clockwise"],
+            [180, "180 degree clockwise"],
+            [270, "270 degree clockwise"]
+        ],
+        "default": 0
+    }, {
+        "title": "Time Zone",
+        "ui_width": 4,
+        "name": "timezone",
+        "type": "select",
+        "options": [
+            ["UTC", "UTC"],
+            ["US/Eastern", "US/Eastern"],
+            ["US/Central", "US/Central"],
+            ["US/Mountain", "US/Mountain"],
+            ["US/Pacific", "US/Pacific"]
+        ],
+        "default": "US/Eastern"
+    }, {
+        "title": "FTP password",
+        "ui_width": 4,
+        "ui_type": "password",
+        "name": "ftp_password",
+        "type": "string",
+        "hint": "Leave empty to disable FTP; Indy is used when site ID is set",
+        "default": ""
+    }, {
+        "title": "Missing data fallback threshold",
+        "ui_width": 4,
+        "name": "bload_threshold",
+        "type": "select",
+        "options": [
+            [10, "10 seconds (for debugging)"],
+            [900, "15 minutes"],
+            [1800, "30 minutes"],
+            [3600, "1 hour"],
+            [10800, "3 hours"]
+        ],
+        "default": 3600
+    }, {
+        "title": "Fallback",
+        "ui_width": 4,
+        "name": "bload_fallback",
+        "type": "resource",
+        "valid": ["image"],
+        "default": "empty.png"
+    }, {
+        "title": "Logo",
+        "ui_width": 4,
+        "name": "logo",
+        "type": "resource",
+        "valid": ["image"],
+        "default": "flagship.png"
+    }]
+}
