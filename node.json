@@ -1,5 +1,5 @@
 {
-    "name": "BLOAD player",
+    "name": "INDY-Bload-v2",
     "permissions": {
         "network": "Fetches Indy showings and optional FTP uploads"
     },
