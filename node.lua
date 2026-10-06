@@ -84,7 +84,7 @@ local bload = (function()
     local display_cfg = {
         movies_per_page = 4,
         page_interval = 5,
-        hide_poster = true,
+        hide_poster = false,
         display_badges = true,
         show_logo = false,
     }
@@ -330,7 +330,15 @@ util.json_watch("config.json", function(config)
     st = util.screen_transform(rotation)
 
     for _, image in ipairs(config.images) do
-        image_files[image.file.filename:lower():gsub('%.%w+$', ''):gsub('[^%w]', '')] = resource.open_file(image.file.asset_name)
+        -- key = file name without folder, extension and punctuation:
+        -- "logos/Avengers Endgame.png" -> "avengersendgame"
+        local fname = image.file.filename or image.file.asset_name or ""
+        fname = fname:gsub("^.*[/\\]", "")
+        local key = fname:lower():gsub('%.%w+$', ''):gsub('[^%w]', '')
+        if key ~= "" then
+            image_files[key] = resource.open_file(image.file.asset_name)
+            print("title art: " .. fname .. " -> key '" .. key .. "'")
+        end
     end
 
     board_style = config.board_style or "premium"
@@ -822,15 +830,54 @@ local function draw_times(movie, cfg, st, x, y, w, h, now, roomy)
 end
 
 -- Title art ------------------------------------------------------------------
+-- loaded_images[key] is the image, or false when that file failed to load
+-- or draw (then the card falls back to the movie name instead of the whole
+-- board going black). Errors are printed to the device log.
+-- Find the title art for a movie: exact key first, then a file whose key
+-- ends with or contains the movie key (handles prefixes like "logos-",
+-- "logo_" or suffixes like "-title"), preferring the shortest match.
+local function find_image_file(key)
+    if not key or key == "" then return end
+    local file = image_files[key]
+    if file then return file end
+    local best, best_len
+    for k, f in pairs(image_files) do
+        if #key >= 4 and (k:sub(-#key) == key or k:find(key, 1, true)) then
+            if not best_len or #k < best_len then
+                best, best_len = f, #k
+            end
+        end
+    end
+    return best
+end
+
 local function movie_image(movie, cfg)
-    local file = image_files[movie.image]
+    local file = find_image_file(movie.image)
     if cfg.hide_poster or not file then
         return
     end
     local image = loaded_images[movie.image]
+    if image == false then
+        return
+    end
     if not image then
-        image = resource.load_image{ file = file:copy(), mipmap = true }
+        local ok, img = pcall(resource.load_image, { file = file:copy(), mipmap = true })
+        if not ok then
+            print("title art: mipmapped load failed for " .. movie.image .. ": " .. tostring(img))
+            ok, img = pcall(resource.load_image, { file = file:copy() })
+        end
+        if not ok then
+            print("title art: could not load " .. movie.image .. ": " .. tostring(img))
+            loaded_images[movie.image] = false
+            return
+        end
+        image = img
         loaded_images[movie.image] = image
+    end
+    -- still loading (or broken): draw the name for now
+    local ok, iw, ih = pcall(image.size, image)
+    if not ok or not iw or iw <= 0 or ih <= 0 then
+        return
     end
     return image
 end
@@ -1058,10 +1105,21 @@ local function show_bload()
         local y = top + p.r * cell_h + st.gap / 2
         local w = cell_w - st.gap
         local h = cell_h * p.span - st.gap
-        if p.span == 2 then
-            draw_tall_card(p.movie, cfg, st, x, y, w, h, cell_h - st.gap, now)
-        else
-            draw_card(p.movie, cfg, st, x, y, w, h, now)
+        local function draw_it()
+            if p.span == 2 then
+                draw_tall_card(p.movie, cfg, st, x, y, w, h, cell_h - st.gap, now)
+            else
+                draw_card(p.movie, cfg, st, x, y, w, h, now)
+            end
+        end
+        local ok, err = pcall(draw_it)
+        if not ok then
+            -- a bad title image must not black out the board: log it, stop
+            -- using that image and draw the card with the movie name instead
+            print("card for " .. tostring(p.movie.name) .. " failed: " .. tostring(err))
+            loaded_images[p.movie.image] = false
+            for _, sh in pairs(shaders) do pcall(sh.deactivate, sh) end
+            pcall(draw_it)
         end
     end
 

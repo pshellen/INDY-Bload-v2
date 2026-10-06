@@ -34,12 +34,12 @@
         "type": "boolean",
         "default": false
     }, {
-        "title": "Hide posters",
+        "title": "Hide title art (names only)",
         "ui_width": 3,
         "name": "hide_poster",
         "type": "boolean",
-        "hint": "Matches showings-hide-poster=true",
-        "default": true
+        "hint": "Off = show the movie logo images from the Movie images list. On = show movie names as text.",
+        "default": false
     }, {
         "title": "Display showing badges",
         "ui_width": 3,
@@ -145,7 +145,7 @@
         "title": "Movie images",
         "type": "section"
     }, {
-        "title": "Optional poster images when Hide posters is off",
+        "title": "Movie logo / title art images (file name = movie name, e.g. avengersendgame.png)",
         "name": "images",
         "type": "list",
         "itemname": "Movie image",

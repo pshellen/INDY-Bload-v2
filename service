@@ -202,7 +202,7 @@ def parse_indy_showings(site):
         'movies': sorted_movies,
         'movies_per_page': int(cfg('movies_per_page', 4)),
         'page_interval': max(1, int(cfg('page_interval', 5))),
-        'hide_poster': bool(cfg('hide_poster', True)),
+        'hide_poster': bool(cfg('hide_poster', False)),
         'display_badges': bool(cfg('display_badges', True)),
         'show_logo': bool(cfg('show_logo', False)),
     }
