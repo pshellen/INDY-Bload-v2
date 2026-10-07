@@ -1147,6 +1147,111 @@ local function show_fallback()
     util.draw_correct(bload_fallback, 0, 0, WIDTH, HEIGHT)
 end
 
+-- "Logo wall" shown when there are no showings to list (e.g. after the last
+-- show of the night with Hide past showings on): every uploaded title logo
+-- tiled and dimmed, rows slowly drifting in opposite directions, with the
+-- brand logo and a short message in the middle.
+local wall_bg = {
+    flagship = resource.load_image "grad-wall-fs.png",
+    harbor_east = resource.load_image "grad-wall-he.png",
+}
+local wall_shade = resource.load_image "wall-shade.png"
+local BRAND_NAMES = {flagship = "FLAGSHIP CINEMAS", harbor_east = "HARBOR EAST CINEMAS"}
+local WALL_BG_RGB = {flagship = {3/255, 4/255, 7/255}, harbor_east = {3/255, 11/255, 29/255}}
+
+local function wall_logos()
+    local list = {}
+    for key in pairs(image_files) do
+        list[#list + 1] = key
+    end
+    table.sort(list)
+    local out = {}
+    for _, key in ipairs(list) do
+        local img = movie_image({image = key}, {hide_poster = false})
+        if img then out[#out + 1] = img end
+    end
+    return out
+end
+
+local function draw_clock(right_x, y, size, c)
+    local minutes = math.floor(current_offset()) % 1440
+    local h, m = math.floor(minutes / 60), minutes % 60
+    local hm = ("%d:%02d"):format((h - 1) % 12 + 1, m)
+    local suffix = h < 12 and "AM" or "PM"
+    local w = time_width(res.times, hm, suffix, size)
+    local tx = right_x - w
+    res.times:write(tx, y, hm, size, c[1], c[2], c[3], 1)
+    local ss = math.floor(size * SUFFIX_SCALE)
+    res.times:write(tx + res.times:width(hm, size) + res.times:width(" ", ss), y + size - ss - size * 0.02, suffix, ss, c[1], c[2], c[3], 1)
+end
+
+local function show_no_showings()
+    local b = B()
+    -- scale against the short side so portrait screens get full-size text
+    local s = math.min(WIDTH, HEIGHT) / 1080
+    local portrait_wall = HEIGHT > WIDTH
+    ;(wall_bg[brand] or wall_bg.flagship):draw(0, 0, WIDTH, HEIGHT)
+
+    -- the wall
+    local logos = wall_logos()
+    if #logos > 0 then
+        local cw, ch = 420 * s, 190 * s
+        local rows = math.ceil(HEIGHT / ch) + 1
+        local cols = math.ceil(WIDTH / cw) + 2
+        local t = sys.now()
+        for r = 0, rows - 1 do
+            local dir = (r % 2 == 0) and 1 or -1
+            local offset = (t * 22 * s * dir + ((r % 2 == 1) and cw / 2 or 0)) % cw
+            local y = r * ch - ch / 3
+            for c = -1, cols - 1 do
+                local img = logos[((r * 3 + c) % #logos) + 1]
+                local x = c * cw + offset
+                local x1, y1, x2, y2 = fit_rect(img, x + 35 * s, y + 25 * s, x + cw - 35 * s, y + ch - 25 * s)
+                if shaders.keyblack then
+                    shaders.keyblack:use{alpha = 0.30}
+                    img:draw(x1, y1, x2, y2)
+                    shaders.keyblack:deactivate()
+                else
+                    img:draw(x1, y1, x2, y2, 0.30)
+                end
+            end
+        end
+    end
+
+    -- soft dark centre so the brand reads clearly, tinted to the background
+    local bg = WALL_BG_RGB[brand] or WALL_BG_RGB.flagship
+    strike_through_color:use{color = {bg[1], bg[2], bg[3], 1}}
+    wall_shade:draw(WIDTH * 0.10, HEIGHT * 0.08, WIDTH * 0.90, HEIGHT * 0.96)
+    strike_through_color:deactivate()
+
+    -- brand logo + message
+    local text_c = b.clock
+    local ly = HEIGHT * (portrait_wall and 0.34 or 0.30)
+    local lx = portrait_wall and 0.12 or 0.30
+    if brand_logo then
+        local x1, y1, x2, y2 = fit_rect(brand_logo, WIDTH * lx, ly, WIDTH * (1 - lx), ly + 300 * s)
+        brand_logo:draw(x1, y1, x2, y2)
+        ly = y2
+    end
+    local line1 = "NOW PLAYING AT " .. (BRAND_NAMES[brand] or "FLAGSHIP CINEMAS")
+    local size1 = fit_size(res.times, line1, math.floor(64 * s), WIDTH * 0.90, 16)
+    local y1 = ly + 50 * s
+    centered(res.times, line1, size1, WIDTH / 2, y1, text_c[1], text_c[2], text_c[3], 1)
+
+    -- "all shows have started" only makes sense in the evening; earlier in
+    -- the day (schedule not published yet) just show the brand line
+    local minutes = math.floor(current_offset()) % 1440
+    if minutes >= 17 * 60 or minutes < 4 * 60 then
+        local ry = y1 + size1 + 28 * s
+        b.underline:draw(WIDTH / 2 - 140 * s, ry, WIDTH / 2 + 140 * s, ry + 4 * s)
+        local line2 = "ALL SHOWS HAVE STARTED FOR THE DAY"
+        local size2 = fit_size(res.label, line2, math.floor(40 * s), WIDTH * 0.90, 12)
+        centered(res.label, line2, size2, WIDTH / 2, ry + 28 * s, text_c[1], text_c[2], text_c[3], 0.92)
+    end
+
+    draw_clock(WIDTH - 40 * s, 34 * s, math.floor(54 * s), text_c)
+end
+
 function node.render()
     gl.clear(0,0,0,1)
     black:draw(0, 0, WIDTH, HEIGHT)
@@ -1155,8 +1260,14 @@ function node.render()
     local movies = bload.get_paged_movies()
     local stale = bload.get_data_source() ~= "indy" and bload_age > bload_threshold
 
-    if #movies == 0 or stale then
+    if stale then
         show_fallback()
+    elseif #movies == 0 then
+        if bload.get_data_source() == "indy" then
+            show_no_showings()
+        else
+            show_fallback()
+        end
     else
         show_bload()
     end

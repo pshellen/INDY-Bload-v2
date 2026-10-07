@@ -208,8 +208,10 @@ def parse_indy_showings(site):
     }
 
 def write_showings(payload):
-    with open('showings.json', 'wb') as f:
+    # write to a temp file and rename, so the board never reads half a file
+    with open('showings.json.tmp', 'wb') as f:
         f.write(json.dumps(payload, separators=(',', ':')))
+    os.rename('showings.json.tmp', 'showings.json')
 
 def indy_site_id():
     return cfg('indy_site_id') or cfg('indy_screen_id')
