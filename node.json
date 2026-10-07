@@ -110,6 +110,13 @@
         "hint": "Show the Reserved Seating feature under each title",
         "default": true
     }, {
+        "title": "Hide badges containing",
+        "ui_width": 3,
+        "name": "hidden_badges",
+        "type": "string",
+        "hint": "Comma-separated words. Any badge whose text contains one is not shown (e.g. discount, presale).",
+        "default": "discount"
+    }, {
         "title": "Theater Ears logo",
         "ui_width": 3,
         "name": "theater_ears_logo",

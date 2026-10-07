@@ -92,13 +92,43 @@ def fetch_indy(site_id):
             'query': (
                 '{ site(id: %s) { name todaysShowings { time current past '
                 'showingBadges { id title displayName } '
-                'movie { name rating ratingReason posterImage } } } }'
+                'movie { name rating ratingReason posterImage bannerImage } } } }'
             ) % int(site_id),
         }),
     )
     r.raise_for_status()
     payload = r.json()
     return payload['data']['site']
+
+IMGIX_BASE = "https://indy-systems.imgix.net/"
+
+def banner_file(banner_id):
+    """Download a movie's banner (wide scene still, no title) once and cache it
+    next to the node. Returns the file name, or '' if unavailable."""
+    if not banner_id:
+        return ''
+    name = 'banner-%s.jpg' % ''.join(ch for ch in banner_id if ch.isalnum())
+    if os.path.exists(name):
+        return name
+    try:
+        r = requests.get(IMGIX_BASE + banner_id + '?w=1000&fm=jpg&q=75',
+                         headers={'User-Agent': UA}, timeout=10)
+        r.raise_for_status()
+        with open(name + '.tmp', 'wb') as f:
+            f.write(r.content)
+        os.rename(name + '.tmp', name)
+        return name
+    except Exception:
+        traceback.print_exc()
+        return ''
+
+def cleanup_banners(keep):
+    for fname in os.listdir('.'):
+        if fname.startswith('banner-') and fname not in keep:
+            try:
+                os.remove(fname)
+            except Exception:
+                pass
 
 def badge_is_3d(badge):
     title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
@@ -173,6 +203,7 @@ def parse_indy_showings(site):
                 'name': name,
                 'image': ''.join(ch for ch in name.lower() if ch.isalnum()),
                 'mpaa': (movie.get('rating') or '').strip(),
+                'banner': banner_file(movie.get('bannerImage')),
                 'badges': [],
                 'shows': [],
             }
@@ -193,6 +224,7 @@ def parse_indy_showings(site):
         entry['shows'].append(parts)
 
     sorted_movies = sorted(movies.values(), key=lambda m: m['name'].lower())
+    cleanup_banners(set(m['banner'] for m in sorted_movies if m.get('banner')))
     for movie in sorted_movies:
         movie['shows'] = merge_showtimes(movie['shows'])
 

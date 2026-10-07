@@ -24,6 +24,11 @@ for 3D / Open Caption / Sensory Friendly shows.
   underline on the next showing, past showings dimmed and struck through.
 - **Badges** next to showtimes: 3D, Open Caption (OC) and Sensory Friendly (SF),
   each replaceable from the setup. Theater Ears is shown as its logo.
+- **Banner fallback** – a movie with no uploaded title art uses Indy's banner
+  image (wide scene still, no title) with the movie name over it; banners are
+  downloaded and cached by the service, uploaded logos always win.
+- **Logo wall** when there are no showings, and a rotating **badge legend** in
+  the header while any 3D / OC / SF showtime is still ahead.
 - **Tall cards** – a movie with more than *N* showtimes spans two rows so its
   times stay large (see `docs/previews/tall-*.png`).
 - **Portrait** uses a 2×3 grid for 5–6 movies (no empty bottom row).

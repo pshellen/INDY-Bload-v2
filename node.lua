@@ -62,6 +62,7 @@ local show_header = true
 local wide_threshold = 8 -- movies with more showtimes than this get a double-wide card (0 = off)
 local brand_logo -- logo drawn in the header strip and empty cells
 local show_reserved = true
+local hidden_badges = {"discount"} -- badge text containing any of these is never shown
 local te_logo -- Theater Ears logo image (white on transparent)
 local show_icons = {} -- per-showtime badge art: ["3D"], OC, SENSORY
 
@@ -245,6 +246,7 @@ local bload = (function()
                 image = movie.image or movie.name:gsub('[^%w]', ''):lower(),
                 mpaa = movie.mpaa or "",
                 badges = movie.badges or {},
+                banner = movie.banner or "",
                 shows = shows,
             }
         end
@@ -351,6 +353,11 @@ util.json_watch("config.json", function(config)
     local okb, imgb = pcall(resource.load_image, {file = brand_logo_name, mipmap = true})
     brand_logo = okb and imgb or nil
     show_reserved = config.show_reserved_seating ~= false
+    hidden_badges = {}
+    for word in ((config.hidden_badges or "discount") .. ","):gmatch("([^,]*),") do
+        word = word:lower():match("^%s*(.-)%s*$")
+        if word ~= "" then hidden_badges[#hidden_badges + 1] = word end
+    end
     local te_name = (config.theater_ears_logo and config.theater_ears_logo.asset_name) or "theater-ears.png"
     local ok, img = pcall(resource.load_image, {file = te_name, mipmap = true})
     te_logo = ok and img or nil
@@ -573,7 +580,13 @@ local function feature_list(movie, cfg)
     end
     for _, badge in ipairs(visible_movie_badges(movie.badges)) do
         local lower = badge:lower()
-        if lower:find("reserved seat", 1, true) then
+        local hidden = false
+        for _, word in ipairs(hidden_badges) do
+            if lower:find(word, 1, true) then hidden = true; break end
+        end
+        if hidden then
+            -- e.g. "Discount Tuesday": not shown on the board
+        elseif lower:find("reserved seat", 1, true) then
             if show_reserved then
                 out[#out+1] = {text = badge:upper()}
             end
@@ -917,6 +930,92 @@ end
 -- Double-tall card for movies with more showtimes than wide_threshold:
 -- title art and info keep the same size as a normal card (so rows line up)
 -- and all the extra height goes to a big showtime grid.
+-- Banner fallback ---------------------------------------------------------------
+-- When a movie has no uploaded title art, use Indy's banner image (a wide scene
+-- still without a title): cover-cropped, dimmed, faded into the card at the
+-- bottom, with the movie name on top. The service downloads the banners.
+local fade_down = resource.load_image "fade-down.png"
+local corner_tl = resource.load_image "corner-tl.png"
+local corner_tr = resource.load_image "corner-tr.png"
+local CARD_TOP_RGB = {flagship = {8/255, 10/255, 16/255}, harbor_east = {3/255, 11/255, 29/255}}
+
+local function movie_banner(movie, cfg)
+    if cfg.hide_poster or not movie.banner or movie.banner == "" then return end
+    local key = "banner:" .. movie.banner
+    local img = loaded_images[key]
+    if img == false then return end
+    if not img then
+        local ok, loaded = pcall(resource.load_image, movie.banner)
+        if not ok then
+            print("banner: could not load " .. movie.banner .. ": " .. tostring(loaded))
+            loaded_images[key] = false
+            return
+        end
+        img = loaded
+        loaded_images[key] = img
+    end
+    local ok, iw, ih = pcall(img.size, img)
+    if not ok or not iw or iw <= 0 or ih <= 0 then return end
+    return img
+end
+
+local function draw_banner_title(movie, banner, x, y, w, h, fade_rgb, round_top)
+    local iw, ih = banner:size()
+    local area, ia = w / h, iw / ih
+    local tx1, ty1, tx2, ty2 = 0, 0, 1, 1
+    if ia > area then
+        local tw = area / ia
+        tx1, tx2 = (1 - tw) / 2, (1 + tw) / 2
+    else
+        local th = ia / area
+        ty1 = (1 - th) * 0.35
+        ty2 = ty1 + th
+    end
+    banner:draw(x, y, x + w, y + h, 1, tx1, ty1, tx2, ty2)
+    T.black:draw(x, y, x + w, y + h, 0.32)
+    strike_through_color:use{color = {fade_rgb[1], fade_rgb[2], fade_rgb[3], 1}}
+    fade_down:draw(x, y, x + w, y + h)
+    strike_through_color:deactivate()
+    if round_top then
+        corner_tl:draw(x, y, x + 18, y + 18)
+        corner_tr:draw(x + w - 18, y, x + w, y + 18)
+    end
+    local name = (movie.name or ""):upper()
+    local size = fit_size(res.times, name, math.floor(h * 0.30), w - 70, 16)
+    local ty = y + h - size - h * 0.12
+    local tw = res.times:width(name, size)
+    local tx = x + (w - tw) / 2
+    res.times:write(tx + 2, ty + 3, name, size, 0, 0, 0, 0.55)
+    res.times:write(tx, ty, name, size, 1, 1, 1, 1)
+end
+
+-- Title area of a card: uploaded title art (with the premium halo), else the
+-- Indy banner fallback, else the movie name as text.
+local function draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, inset)
+    if not image then
+        local banner = movie_banner(movie, cfg)
+        if banner then
+            local fade
+            if board_style == "premium" then
+                fade = CARD_TOP_RGB[brand] or CARD_TOP_RGB.flagship
+            else
+                fade = {0, 0, 0}
+            end
+            draw_banner_title(movie, banner, x, y, w, logo_h, fade, board_style == "premium")
+            return
+        end
+    end
+    if board_style == "premium" and image and shaders.glow then
+        local x1, y1, x2, y2 = title_rect(image, x, y + inset, w, logo_h)
+        local gw, gh = (x2 - x1) * 0.12, (y2 - y1) * 0.18
+        local iw, ih = image:size()
+        shaders.glow:use{dim = 0.16, spread = {0.05, 0.05 * iw / ih}}
+        image:draw(math.max(x, x1 - gw), math.max(y, y1 - gh), math.min(x + w, x2 + gw), math.min(y + logo_h + info_h * 0.3, y2 + gh))
+        shaders.glow:deactivate()
+    end
+    draw_title(movie, image, board_style ~= "refined", x, y + inset, w, logo_h)
+end
+
 local function draw_tall_card(movie, cfg, st, x, y, w, h, cell_h, now)
     local image = movie_image(movie, cfg)
     local logo_h = math.floor(cell_h * st.logo)
@@ -926,28 +1025,20 @@ local function draw_tall_card(movie, cfg, st, x, y, w, h, cell_h, now)
 
     if board_style == "refined" then
         T.black:draw(x, y, x + w, y + logo_h)
-        draw_title(movie, image, false, x, y, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, 0)
         info_refined(movie, cfg, x, y + logo_h, w, info_h)
         grad_times:draw(x, times_y, x + w, y + h)
         draw_times(movie, cfg, st, x + 6, times_y, w - 12, y + h - times_y, now, true)
 
     elseif board_style == "minimal" then
         grad_card:draw(x, y, x + w, y + h)
-        draw_title(movie, image, true, x, y, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, 0)
         info_minimal(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + 6, times_y, w - 12, y + h - times_y - cell_h * 0.03, now, true)
 
     else -- premium
         B().card:draw(x, y, x + w, y + h)
-        if image and shaders.glow then
-            local x1, y1, x2, y2 = title_rect(image, x, y + inset, w, logo_h)
-            local gw, gh = (x2 - x1) * 0.12, (y2 - y1) * 0.18
-            local iw, ih = image:size()
-            shaders.glow:use{dim = 0.16, spread = {0.05, 0.05 * iw / ih}}
-            image:draw(math.max(x, x1 - gw), math.max(y, y1 - gh), math.min(x + w, x2 + gw), math.min(y + logo_h + info_h * 0.3, y2 + gh))
-            shaders.glow:deactivate()
-        end
-        draw_title(movie, image, true, x, y + inset, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, inset)
         info_premium(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + inset, times_y, w - inset * 2, y + h - times_y - inset, now, true)
         if shaders.frame then
@@ -966,29 +1057,20 @@ local function draw_card(movie, cfg, st, x, y, w, h, now)
 
     if board_style == "refined" then
         T.black:draw(x, y, x + w, y + logo_h)
-        draw_title(movie, image, false, x, y, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, 0)
         info_refined(movie, cfg, x, y + logo_h, w, info_h)
         grad_times:draw(x, times_y, x + w, y + h)
         draw_times(movie, cfg, st, x + 6, times_y, w - 12, y + h - times_y, now)
 
     elseif board_style == "minimal" then
         grad_card:draw(x, y, x + w, y + h)
-        draw_title(movie, image, true, x, y, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, 0)
         info_minimal(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + 6, times_y, w - 12, y + h - times_y - h * 0.03, now)
 
     else -- premium
         B().card:draw(x, y, x + w, y + h)
-        if image and shaders.glow then
-            -- barely-there halo sitting just behind the title art
-            local x1, y1, x2, y2 = title_rect(image, x, y + st.inset, w, logo_h)
-            local gw, gh = (x2 - x1) * 0.12, (y2 - y1) * 0.18
-            local iw, ih = image:size()
-            shaders.glow:use{dim = 0.16, spread = {0.05, 0.05 * iw / ih}}
-            image:draw(math.max(x, x1 - gw), math.max(y, y1 - gh), math.min(x + w, x2 + gw), math.min(y + logo_h + info_h * 0.3, y2 + gh))
-            shaders.glow:deactivate()
-        end
-        draw_title(movie, image, true, x, y + st.inset, w, logo_h)
+        draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, st.inset)
         info_premium(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + st.inset, times_y, w - st.inset * 2, y + h - times_y - st.inset, now)
         if shaders.frame then
@@ -1006,6 +1088,76 @@ local function header_height()
     return show_header and math.floor(HEIGHT * 0.085) or 0
 end
 
+-- Badge legend in the header: explains the badges guests will see next to
+-- showtimes. Only badges on a showtime that has not started yet are included;
+-- they rotate every 5 seconds with a short fade. Empty list = no legend.
+local LEGEND = {
+    {tag = "3D", label = "3D SHOWING"},
+    {tag = "OC", label = "OPEN CAPTION  \194\183  SUBTITLES ON SCREEN"},
+    {tag = "SENSORY", label = "SENSORY FRIENDLY  \194\183  LIGHTS UP, SOUND DOWN"},
+}
+local LEGEND_SECONDS = 5
+
+local function active_legend()
+    local cfg = bload.get_display_cfg()
+    if not cfg.display_badges then return {} end
+    local now = current_offset()
+    local found = {}
+    for _, movie in ipairs(bload.get_sorted_movies()) do
+        for _, show in ipairs(movie.shows or {}) do
+            local started = now > show.showtime.offset + 15 or show.past
+            if not started then
+                if show.threed == true then found["3D"] = true end
+                if show.open_caption == true then found.OC = true end
+                if show.sensory == true then found.SENSORY = true end
+            end
+        end
+    end
+    local out = {}
+    for _, item in ipairs(LEGEND) do
+        if found[item.tag] then out[#out + 1] = item end
+    end
+    return out
+end
+
+local function draw_legend(hh)
+    local items = active_legend()
+    if #items == 0 then return end
+    local t = sys.now()
+    local idx = math.floor(t / LEGEND_SECONDS) % #items + 1
+    local item = items[idx]
+    -- fade in/out over 0.4 s at each change (no fade when there is only one)
+    local phase = t % LEGEND_SECONDS
+    local alpha = 1
+    if #items > 1 then
+        alpha = math.min(1, phase / 0.4, (LEGEND_SECONDS - phase) / 0.4)
+    end
+    local icon = show_icons[item.tag]
+    local icon_h = math.floor(hh * 0.64)
+    local icon_w = 0
+    if icon then
+        local iw, ih = icon:size()
+        if iw and ih and ih > 0 then icon_w = icon_h * iw / ih end
+    elseif item.tag == "3D" then
+        icon_w = icon_h * 920 / 716
+    end
+    local size = math.floor(hh * 0.40)
+    local gap = math.floor(hh * 0.22)
+    -- keep clear of the logo (left ~30%) and the clock (right ~15%)
+    local max_text = WIDTH * 0.50 - icon_w - gap
+    size = fit_size(res.times, item.label, size, max_text, 12)
+    local text_w = res.times:width(item.label, size)
+    local total = icon_w + gap + text_w
+    local x = WIDTH * 0.54 - total / 2
+    local c = B().clock
+    if icon then
+        icon:draw(x, (hh - icon_h) / 2, x + icon_w, (hh + icon_h) / 2, alpha)
+    elseif item.tag == "3D" then
+        badge_3d:draw(x, (hh - icon_h) / 2, x + icon_w, (hh + icon_h) / 2, alpha)
+    end
+    res.times:write(x + icon_w + gap, (hh - size) / 2 - 2, item.label, size, c[1], c[2], c[3], alpha)
+end
+
 local function draw_header()
     local hh = header_height()
     if hh == 0 then return end
@@ -1016,6 +1168,7 @@ local function draw_header()
         local x1, y1, x2, y2 = fit_rect(brand_logo, WIDTH * 0.015, hh * 0.06, WIDTH * 0.30, hh * 0.94)
         brand_logo:draw(WIDTH * 0.015, y1, WIDTH * 0.015 + (x2 - x1), y2)
     end
+    draw_legend(hh)
     -- current local time on the right
     local minutes = math.floor(current_offset()) % 1440
     local h, m = math.floor(minutes / 60), minutes % 60
