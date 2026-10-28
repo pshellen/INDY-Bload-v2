@@ -8,7 +8,6 @@ util.no_globals()
 
 local json = require "json"
 
-local scissors = sys.get_ext "scissors"
 
 local st
 local image_files = {}
