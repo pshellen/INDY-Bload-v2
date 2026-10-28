@@ -56,6 +56,7 @@ local bload_age = 0
 
 -- Board settings (set from config.json further down)
 local board_style = "premium"
+local light_rendering = true   -- skip the glow / frame shaders (older Pis hang on them)
 local brand = "flagship"
 local show_header = true
 local wide_threshold = 8 -- movies with more showtimes than this get a double-wide card (0 = off)
@@ -343,6 +344,7 @@ util.json_watch("config.json", function(config)
     end
 
     board_style = config.board_style or "premium"
+    light_rendering = config.light_rendering ~= false
     brand = config.brand or "flagship"
     show_header = config.show_header ~= false
     wide_threshold = tonumber(config.wide_threshold) or 8
@@ -1004,7 +1006,7 @@ local function draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, inset
             return
         end
     end
-    if board_style == "premium" and image and shaders.glow then
+    if board_style == "premium" and image and shaders.glow and not light_rendering then
         local x1, y1, x2, y2 = title_rect(image, x, y + inset, w, logo_h)
         local gw, gh = (x2 - x1) * 0.12, (y2 - y1) * 0.18
         local iw, ih = image:size()
@@ -1013,6 +1015,28 @@ local function draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, inset
         shaders.glow:deactivate()
     end
     draw_title(movie, image, board_style ~= "refined", x, y + inset, w, logo_h)
+end
+
+local frame_tex = {}
+-- Card outline. Light rendering draws four plain strips instead of running
+-- the rounded-corner shader over the whole card.
+local function draw_frame(x, y, w, h)
+    if light_rendering or not shaders.frame then
+        local c = B().frame
+        local key = brand
+        if not frame_tex[key] then
+            frame_tex[key] = resource.create_colored_texture(c[1], c[2], c[3], c[4])
+        end
+        local t, b = frame_tex[key], 3
+        t:draw(x, y, x + w, y + b)
+        t:draw(x, y + h - b, x + w, y + h)
+        t:draw(x, y + b, x + b, y + h - b)
+        t:draw(x + w - b, y + b, x + w, y + h - b)
+    else
+        shaders.frame:use{size = {w, h}, radius = 18, border = 3, color = B().frame}
+        T.white:draw(x, y, x + w, y + h)
+        shaders.frame:deactivate()
+    end
 end
 
 local function draw_tall_card(movie, cfg, st, x, y, w, h, cell_h, now)
@@ -1040,11 +1064,7 @@ local function draw_tall_card(movie, cfg, st, x, y, w, h, cell_h, now)
         draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, inset)
         info_premium(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + inset, times_y, w - inset * 2, y + h - times_y - inset, now, true)
-        if shaders.frame then
-            shaders.frame:use{size = {w, h}, radius = 18, border = 3, color = B().frame}
-            T.white:draw(x, y, x + w, y + h)
-            shaders.frame:deactivate()
-        end
+        draw_frame(x, y, w, h)
     end
 end
 
@@ -1072,14 +1092,7 @@ local function draw_card(movie, cfg, st, x, y, w, h, now)
         draw_title_area(movie, cfg, image, x, y, w, logo_h, info_h, st.inset)
         info_premium(movie, cfg, x, y + logo_h, w, info_h)
         draw_times(movie, cfg, st, x + st.inset, times_y, w - st.inset * 2, y + h - times_y - st.inset, now)
-        if shaders.frame then
-            shaders.frame:use{
-                size = {w, h}, radius = 18, border = 3,
-                color = B().frame,
-            }
-            T.white:draw(x, y, x + w, y + h)
-            shaders.frame:deactivate()
-        end
+        draw_frame(x, y, w, h)
     end
 end
 

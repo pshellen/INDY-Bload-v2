@@ -103,6 +103,13 @@
         ],
         "default": "premium"
     }, {
+        "title": "Light rendering (older players)",
+        "ui_width": 3,
+        "name": "light_rendering",
+        "type": "boolean",
+        "hint": "Skips the logo glow and rounded-frame shaders, which can hang the GPU ('timeout waiting for fence') on older Raspberry Pis. Turn off only on players that run Premium without crashing.",
+        "default": true
+    }, {
         "title": "Show Reserved Seating",
         "ui_width": 3,
         "name": "show_reserved_seating",
