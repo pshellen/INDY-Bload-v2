@@ -19,7 +19,6 @@ local rotation = 0
 local SW, SH = 1920, 1080
 local rotation_method = "player"
 local rotate_in_package = false
-local diag_cfg = "" -- TEMP diagnostic (yellow line on the board)
 local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
@@ -374,7 +373,6 @@ util.json_watch("config.json", function(config)
     loaded_images = {}
 
     gl.setup(1920, 1080)
-    local wh_setup = tostring(WIDTH) .. "x" .. tostring(HEIGHT)
 
     rotation = config.rotation or 0
     local setup_rotation = config.__metadata.device_data.rotation
@@ -410,13 +408,9 @@ util.json_watch("config.json", function(config)
         st = util.screen_transform(rotation)
         SW, SH = WIDTH, HEIGHT
     end
-    local okn, nw, nh = pcall(function() return NATIVE_WIDTH, NATIVE_HEIGHT end)
-    diag_cfg = "setup " .. wh_setup
-        .. " after-st " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
-        .. " native " .. (okn and (tostring(nw) .. "x" .. tostring(nh)) or "n/a")
-        .. " rot " .. tostring(rotation) .. "(" .. type(rotation) .. ")"
-        .. " method " .. rotation_method
-    print("diag: " .. diag_cfg)
+    print(string.format("screen: %sx%s, rotation %s, method %s, layout %sx%s",
+        tostring(WIDTH), tostring(HEIGHT), tostring(rotation), rotation_method,
+        tostring(SW), tostring(SH)))
 
     for _, image in ipairs(config.images) do
         -- key = file name without folder, extension and punctuation:
@@ -1516,13 +1510,7 @@ end
 
 function node.render()
     gl.clear(0,0,0,1)
-    black:draw(0, 0, WIDTH, HEIGHT) -- PANEL
-    -- TEMP: drawn before any rotation, so it shows (maybe sideways) as long
-    -- as the player is alive, even if the rotated board ends up off screen
-    pcall(function()
-        res.label:write(10, 10, "alive " .. rotation_method .. " up "
-            .. math.floor(sys.now() / 60) .. "m", 30, 0, 1, 0, 1) -- PANEL
-    end)
+    black:draw(0, 0, WIDTH, HEIGHT) -- whole panel, before rotating
     st()
     if not rotate_in_package then
         SW, SH = WIDTH, HEIGHT -- player may change these after startup
@@ -1542,15 +1530,4 @@ function node.render()
     else
         show_bload()
     end
-
-    -- TEMP diagnostic: config-time and live screen size, uptime, cached images
-    pcall(function()
-        local n = 0
-        for _ in pairs(loaded_images) do n = n + 1 end
-        local live = "live " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT) -- PANEL
-            .. " layout " .. tostring(SW) .. "x" .. tostring(SH)
-            .. " up " .. math.floor(sys.now() / 60) .. "m img " .. n
-        res.label:write(10, SH - 95, diag_cfg, 36, 1, 1, 0, 1)
-        res.label:write(10, SH - 50, live, 36, 1, 1, 0, 1)
-    end)
 end
