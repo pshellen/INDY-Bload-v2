@@ -1283,9 +1283,45 @@ local function draw_header()
     res.times:write(tx + res.times:width(hm, size) + res.times:width(" ", ss), ty + size - ss - size * 0.02, suffix, ss, c[1], c[2], c[3], 1)
 end
 
+-- Split movies into pages on a fixed grid. A movie with more than
+-- wide_threshold showtimes takes two cells stacked vertically; the grid itself
+-- never grows for it (other cards keep their size). When the next movie does
+-- not fit, a new page starts. Each page is a list of {movie, r, c, span}.
+local function build_pages(movies, cols, rows)
+    local pages, placed, used = {}, {}, {}
+    local function free(r, c) return r < rows and c < cols and not used[r * cols + c] end
+    local function find(span)
+        for pos = 0, cols * rows - 1 do
+            local r, c = math.floor(pos / cols), pos % cols
+            if free(r, c) and (span == 1 or free(r + 1, c)) then return r, c end
+        end
+    end
+    for _, movie in ipairs(movies) do
+        local tall = rows >= 2 and wide_threshold > 0 and #movie.shows > wide_threshold
+        local span = tall and 2 or 1
+        local r, c = find(span)
+        if not r and #placed > 0 then
+            pages[#pages + 1] = placed
+            placed, used = {}, {}
+            r, c = find(span)
+        end
+        if not r and span == 2 then
+            span = 1
+            r, c = find(1)
+        end
+        if r then
+            used[r * cols + c] = true
+            if span == 2 then used[(r + 1) * cols + c] = true end
+            placed[#placed + 1] = {movie = movie, r = r, c = c, span = span}
+        end
+    end
+    if #placed > 0 then pages[#pages + 1] = placed end
+    return pages
+end
+
 local function show_bload()
     local cfg = bload.get_display_cfg()
-    local movies, page_size = bload.get_paged_movies()
+    local all_movies = bload.get_sorted_movies()
     local st = STYLES[board_style] or STYLES.refined
     local b = B()
     -- brand colors for the showtimes in every style
@@ -1298,17 +1334,21 @@ local function show_bload()
     end
     st = style
 
-    -- how many grid cells each movie needs (2 = double-tall card)
-    local spans, cells = {}, 0
-    for i, movie in ipairs(movies) do
-        local wide = wide_threshold > 0 and #movie.shows > wide_threshold
-        spans[i] = wide and 2 or 1
-        cells = cells + spans[i]
+    -- grid size comes from the movies per page only; double-tall cards
+    -- push movies to the next page instead of shrinking every card
+    local per_page = cfg.movies_per_page or 4
+    local grid_n = per_page
+    if bload.get_data_source() ~= "indy" or #all_movies <= per_page then
+        grid_n = math.max(#all_movies, 1)
     end
-    local extra = cells - #movies
-    local cols, rows = layouter(rotation, math.max(page_size + extra, cells))
-    if rows < 2 then
-        for i = 1, #spans do spans[i] = 1 end
+    local cols, rows = layouter(rotation, grid_n)
+    local pages = build_pages(all_movies, cols, rows)
+    local interval = math.max(1, cfg.page_interval or 5)
+    local placed = pages[math.floor(sys.now() / interval) % math.max(#pages, 1) + 1] or {}
+    local used = {}
+    for _, p in ipairs(placed) do
+        used[p.r * cols + p.c] = true
+        if p.span == 2 then used[(p.r + 1) * cols + p.c] = true end
     end
     local top = header_height()
     local cell_w = SW / cols
@@ -1321,36 +1361,6 @@ local function show_bload()
         T.black:draw(0, 0, SW, SH)
     end
     draw_header()
-
-    -- place cards in reading order; a tall card takes the first spot with
-    -- two free cells stacked, and single cards back-fill any gaps
-    local used = {}
-    local function free(r, c) return r < rows and c < cols and not used[r * cols + c] end
-    local placed = {}
-    for i, movie in ipairs(movies) do
-        local span = spans[i]
-        local spot
-        for pos = 0, cols * rows - 1 do
-            local r, c = math.floor(pos / cols), pos % cols
-            if free(r, c) and (span == 1 or free(r + 1, c)) then
-                spot = {r = r, c = c}
-                break
-            end
-        end
-        if not spot and span == 2 then
-            -- no room for a tall card: fall back to a normal one
-            span = 1
-            for pos = 0, cols * rows - 1 do
-                local r, c = math.floor(pos / cols), pos % cols
-                if free(r, c) then spot = {r = r, c = c}; break end
-            end
-        end
-        if spot then
-            used[spot.r * cols + spot.c] = true
-            if span == 2 then used[(spot.r + 1) * cols + spot.c] = true end
-            placed[#placed + 1] = {movie = movie, r = spot.r, c = spot.c, span = span}
-        end
-    end
 
     for _, p in ipairs(placed) do
         local x = p.c * cell_w + st.gap / 2
