@@ -338,6 +338,11 @@ util.json_watch("config.json", function(config)
     end
 
     rotation_method = config.rotation_method or "player"
+    if rotation_method == "package" then
+        -- Leave the device itself at 0 degrees (a rotated device makes some
+        -- players go black) and take the board rotation from this setup.
+        rotation = tonumber(config.rotation) or 0
+    end
     rotate_in_package = rotation_method == "package"
         and (rotation == 90 or rotation == 180 or rotation == 270)
     if rotate_in_package then
