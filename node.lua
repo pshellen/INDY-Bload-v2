@@ -15,6 +15,7 @@ local st
 local image_files = {}
 local loaded_images = {}
 local rotation = 0
+local debug_text = "" -- TEMP diagnostic, shown bottom-left on the sign
 
 -- GPU texture cache ------------------------------------------------------------
 -- Every title art / banner used to stay in GPU memory forever. On a Pi 3 that
@@ -379,6 +380,13 @@ util.json_watch("config.json", function(config)
         gl.setup(1920, 1080)
     end
     st = util.screen_transform(rotation)
+
+    -- TEMP diagnostic: what the player really uses (all guarded, cannot error)
+    local okn, nw, nh = pcall(function() return NATIVE_WIDTH, NATIVE_HEIGHT end)
+    debug_text = "diag: WH " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
+        .. "  native " .. (okn and (tostring(nw) .. "x" .. tostring(nh)) or "n/a")
+        .. "  rot " .. tostring(rotation)
+    print(debug_text)
 
     for _, image in ipairs(config.images) do
         -- key = file name without folder, extension and punctuation:
@@ -1486,6 +1494,7 @@ function node.render()
         end
     else
         show_bload()
+        pcall(function() res.label:write(10, HEIGHT - 50, debug_text, 40, 1, 1, 0, 1) end)
         -- start loading the next page's art now so it is ready when the page
         -- flips (also keeps those textures from being evicted)
         local cfg = bload.get_display_cfg()
