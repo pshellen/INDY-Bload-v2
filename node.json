@@ -187,6 +187,17 @@
         ],
         "default": 0
     }, {
+        "title": "Rotation method",
+        "ui_width": 4,
+        "name": "rotation_method",
+        "type": "select",
+        "hint": "Player: info-beamer rotates the screen (default). Package: the screen stays landscape and the board is turned by this package - try it on a player that goes black in portrait.",
+        "options": [
+            ["player", "Player (default)"],
+            ["package", "Package"]
+        ],
+        "default": "player"
+    }, {
         "title": "Time Zone",
         "ui_width": 4,
         "name": "timezone",

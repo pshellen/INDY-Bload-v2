@@ -13,6 +13,12 @@ local st
 local image_files = {}
 local loaded_images = {}
 local rotation = 0
+-- Layout size. "player" rotation method: whatever WIDTH/HEIGHT the player
+-- reports after util.screen_transform. "package" method: the screen stays
+-- 1920x1080 landscape and the board is turned here, on a 1080x1920 layout.
+local SW, SH = 1920, 1080
+local rotation_method = "player"
+local rotate_in_package = false
 local diag_cfg = "" -- TEMP diagnostic (yellow line on the board)
 local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
@@ -331,12 +337,35 @@ util.json_watch("config.json", function(config)
         rotation = setup_rotation
     end
 
-    st = util.screen_transform(rotation)
+    rotation_method = config.rotation_method or "player"
+    rotate_in_package = rotation_method == "package"
+        and (rotation == 90 or rotation == 180 or rotation == 270)
+    if rotate_in_package then
+        local VW, VH = 1920, 1080
+        if rotation == 180 then SW, SH = VW, VH else SW, SH = VH, VW end
+        local rot = rotation
+        st = function()
+            if rot == 90 then
+                gl.translate(VW, 0)
+                gl.rotate(90, 0, 0, 1)
+            elseif rot == 270 then
+                gl.translate(0, VH)
+                gl.rotate(270, 0, 0, 1)
+            else
+                gl.translate(VW, VH)
+                gl.rotate(180, 0, 0, 1)
+            end
+        end
+    else
+        st = util.screen_transform(rotation)
+        SW, SH = WIDTH, HEIGHT
+    end
     local okn, nw, nh = pcall(function() return NATIVE_WIDTH, NATIVE_HEIGHT end)
     diag_cfg = "setup " .. wh_setup
         .. " after-st " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
         .. " native " .. (okn and (tostring(nw) .. "x" .. tostring(nh)) or "n/a")
         .. " rot " .. tostring(rotation) .. "(" .. type(rotation) .. ")"
+        .. " method " .. rotation_method
     print("diag: " .. diag_cfg)
 
     for _, image in ipairs(config.images) do
@@ -1105,7 +1134,7 @@ local function draw_card(movie, cfg, st, x, y, w, h, now)
 end
 
 local function header_height()
-    return show_header and math.floor(HEIGHT * 0.085) or 0
+    return show_header and math.floor(SH * 0.085) or 0
 end
 
 -- Badge legend in the header: explains the badges guests will see next to
@@ -1164,11 +1193,11 @@ local function draw_legend(hh)
     local size = math.floor(hh * 0.40)
     local gap = math.floor(hh * 0.22)
     -- keep clear of the logo (left ~30%) and the clock (right ~15%)
-    local max_text = WIDTH * 0.50 - icon_w - gap
+    local max_text = SW * 0.50 - icon_w - gap
     size = fit_size(res.times, item.label, size, max_text, 12)
     local text_w = res.times:width(item.label, size)
     local total = icon_w + gap + text_w
-    local x = WIDTH * 0.54 - total / 2
+    local x = SW * 0.54 - total / 2
     local c = B().clock
     if icon then
         icon:draw(x, (hh - icon_h) / 2, x + icon_w, (hh + icon_h) / 2, alpha)
@@ -1182,11 +1211,11 @@ local function draw_header()
     local hh = header_height()
     if hh == 0 then return end
     local b = B()
-    b.header:draw(0, 0, WIDTH, hh)
-    b.header_line:draw(0, hh - 3, WIDTH, hh)
+    b.header:draw(0, 0, SW, hh)
+    b.header_line:draw(0, hh - 3, SW, hh)
     if brand_logo then
-        local x1, y1, x2, y2 = fit_rect(brand_logo, WIDTH * 0.015, hh * 0.06, WIDTH * 0.30, hh * 0.94)
-        brand_logo:draw(WIDTH * 0.015, y1, WIDTH * 0.015 + (x2 - x1), y2)
+        local x1, y1, x2, y2 = fit_rect(brand_logo, SW * 0.015, hh * 0.06, SW * 0.30, hh * 0.94)
+        brand_logo:draw(SW * 0.015, y1, SW * 0.015 + (x2 - x1), y2)
     end
     draw_legend(hh)
     -- current local time on the right
@@ -1197,7 +1226,7 @@ local function draw_header()
     local size = math.floor(hh * 0.52)
     local c = b.clock
     local w = time_width(res.times, hm, suffix, size)
-    local tx = WIDTH * 0.985 - w
+    local tx = SW * 0.985 - w
     local ty = (hh - size) / 2
     res.times:write(tx, ty, hm, size, c[1], c[2], c[3], 1)
     local ss = math.floor(size * SUFFIX_SCALE)
@@ -1232,14 +1261,14 @@ local function show_bload()
         for i = 1, #spans do spans[i] = 1 end
     end
     local top = header_height()
-    local cell_w = WIDTH / cols
-    local cell_h = (HEIGHT - top) / rows
+    local cell_w = SW / cols
+    local cell_h = (SH - top) / rows
     local now = current_offset()
 
     if board_style == "refined" then
-        T.divider:draw(0, 0, WIDTH, HEIGHT)
+        T.divider:draw(0, 0, SW, SH)
     else
-        T.black:draw(0, 0, WIDTH, HEIGHT)
+        T.black:draw(0, 0, SW, SH)
     end
     draw_header()
 
@@ -1317,7 +1346,7 @@ util.data_mapper{
 }
 
 local function show_fallback()
-    util.draw_correct(bload_fallback, 0, 0, WIDTH, HEIGHT)
+    util.draw_correct(bload_fallback, 0, 0, SW, SH)
 end
 
 -- "Logo wall" shown when there are no showings to list (e.g. after the last
@@ -1361,16 +1390,16 @@ end
 local function show_no_showings()
     local b = B()
     -- scale against the short side so portrait screens get full-size text
-    local s = math.min(WIDTH, HEIGHT) / 1080
-    local portrait_wall = HEIGHT > WIDTH
-    ;(wall_bg[brand] or wall_bg.flagship):draw(0, 0, WIDTH, HEIGHT)
+    local s = math.min(SW, SH) / 1080
+    local portrait_wall = SH > SW
+    ;(wall_bg[brand] or wall_bg.flagship):draw(0, 0, SW, SH)
 
     -- the wall
     local logos = wall_logos()
     if #logos > 0 then
         local cw, ch = 420 * s, 190 * s
-        local rows = math.ceil(HEIGHT / ch) + 1
-        local cols = math.ceil(WIDTH / cw) + 2
+        local rows = math.ceil(SH / ch) + 1
+        local cols = math.ceil(SW / cw) + 2
         local t = sys.now()
         for r = 0, rows - 1 do
             local dir = (r % 2 == 0) and 1 or -1
@@ -1394,41 +1423,50 @@ local function show_no_showings()
     -- soft dark centre so the brand reads clearly, tinted to the background
     local bg = WALL_BG_RGB[brand] or WALL_BG_RGB.flagship
     strike_through_color:use{color = {bg[1], bg[2], bg[3], 1}}
-    wall_shade:draw(WIDTH * 0.10, HEIGHT * 0.08, WIDTH * 0.90, HEIGHT * 0.96)
+    wall_shade:draw(SW * 0.10, SH * 0.08, SW * 0.90, SH * 0.96)
     strike_through_color:deactivate()
 
     -- brand logo + message
     local text_c = b.clock
-    local ly = HEIGHT * (portrait_wall and 0.34 or 0.30)
+    local ly = SH * (portrait_wall and 0.34 or 0.30)
     local lx = portrait_wall and 0.12 or 0.30
     if brand_logo then
-        local x1, y1, x2, y2 = fit_rect(brand_logo, WIDTH * lx, ly, WIDTH * (1 - lx), ly + 300 * s)
+        local x1, y1, x2, y2 = fit_rect(brand_logo, SW * lx, ly, SW * (1 - lx), ly + 300 * s)
         brand_logo:draw(x1, y1, x2, y2)
         ly = y2
     end
     local line1 = "NOW PLAYING AT " .. (BRAND_NAMES[brand] or "FLAGSHIP CINEMAS")
-    local size1 = fit_size(res.times, line1, math.floor(64 * s), WIDTH * 0.90, 16)
+    local size1 = fit_size(res.times, line1, math.floor(64 * s), SW * 0.90, 16)
     local y1 = ly + 50 * s
-    centered(res.times, line1, size1, WIDTH / 2, y1, text_c[1], text_c[2], text_c[3], 1)
+    centered(res.times, line1, size1, SW / 2, y1, text_c[1], text_c[2], text_c[3], 1)
 
     -- "all shows have started" only makes sense in the evening; earlier in
     -- the day (schedule not published yet) just show the brand line
     local minutes = math.floor(current_offset()) % 1440
     if minutes >= 17 * 60 or minutes < 4 * 60 then
         local ry = y1 + size1 + 28 * s
-        b.underline:draw(WIDTH / 2 - 140 * s, ry, WIDTH / 2 + 140 * s, ry + 4 * s)
+        b.underline:draw(SW / 2 - 140 * s, ry, SW / 2 + 140 * s, ry + 4 * s)
         local line2 = "ALL SHOWS HAVE STARTED FOR THE DAY"
-        local size2 = fit_size(res.label, line2, math.floor(40 * s), WIDTH * 0.90, 12)
-        centered(res.label, line2, size2, WIDTH / 2, ry + 28 * s, text_c[1], text_c[2], text_c[3], 0.92)
+        local size2 = fit_size(res.label, line2, math.floor(40 * s), SW * 0.90, 12)
+        centered(res.label, line2, size2, SW / 2, ry + 28 * s, text_c[1], text_c[2], text_c[3], 0.92)
     end
 
-    draw_clock(WIDTH - 40 * s, 34 * s, math.floor(54 * s), text_c)
+    draw_clock(SW - 40 * s, 34 * s, math.floor(54 * s), text_c)
 end
 
 function node.render()
     gl.clear(0,0,0,1)
-    black:draw(0, 0, WIDTH, HEIGHT)
+    black:draw(0, 0, WIDTH, HEIGHT) -- PANEL
+    -- TEMP: drawn before any rotation, so it shows (maybe sideways) as long
+    -- as the player is alive, even if the rotated board ends up off screen
+    pcall(function()
+        res.label:write(10, 10, "alive " .. rotation_method .. " up "
+            .. math.floor(sys.now() / 60) .. "m", 30, 0, 1, 0, 1) -- PANEL
+    end)
     st()
+    if not rotate_in_package then
+        SW, SH = WIDTH, HEIGHT -- player may change these after startup
+    end
 
     local movies = bload.get_paged_movies()
     local stale = bload.get_data_source() ~= "indy" and bload_age > bload_threshold
@@ -1449,9 +1487,10 @@ function node.render()
     pcall(function()
         local n = 0
         for _ in pairs(loaded_images) do n = n + 1 end
-        local live = "live " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
+        local live = "live " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT) -- PANEL
+            .. " layout " .. tostring(SW) .. "x" .. tostring(SH)
             .. " up " .. math.floor(sys.now() / 60) .. "m img " .. n
-        res.label:write(10, HEIGHT - 95, diag_cfg, 36, 1, 1, 0, 1)
-        res.label:write(10, HEIGHT - 50, live, 36, 1, 1, 0, 1)
+        res.label:write(10, SH - 95, diag_cfg, 36, 1, 1, 0, 1)
+        res.label:write(10, SH - 50, live, 36, 1, 1, 0, 1)
     end)
 end
