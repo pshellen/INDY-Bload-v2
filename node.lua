@@ -13,6 +13,7 @@ local st
 local image_files = {}
 local loaded_images = {}
 local rotation = 0
+local diag_cfg = "" -- TEMP diagnostic (yellow line on the board)
 local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
@@ -322,6 +323,7 @@ util.json_watch("config.json", function(config)
     loaded_images = {}
 
     gl.setup(1920, 1080)
+    local wh_setup = tostring(WIDTH) .. "x" .. tostring(HEIGHT)
 
     rotation = config.rotation or 0
     local setup_rotation = config.__metadata.device_data.rotation
@@ -330,6 +332,12 @@ util.json_watch("config.json", function(config)
     end
 
     st = util.screen_transform(rotation)
+    local okn, nw, nh = pcall(function() return NATIVE_WIDTH, NATIVE_HEIGHT end)
+    diag_cfg = "setup " .. wh_setup
+        .. " after-st " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
+        .. " native " .. (okn and (tostring(nw) .. "x" .. tostring(nh)) or "n/a")
+        .. " rot " .. tostring(rotation) .. "(" .. type(rotation) .. ")"
+    print("diag: " .. diag_cfg)
 
     for _, image in ipairs(config.images) do
         -- key = file name without folder, extension and punctuation:
@@ -1436,4 +1444,14 @@ function node.render()
     else
         show_bload()
     end
+
+    -- TEMP diagnostic: config-time and live screen size, uptime, cached images
+    pcall(function()
+        local n = 0
+        for _ in pairs(loaded_images) do n = n + 1 end
+        local live = "live " .. tostring(WIDTH) .. "x" .. tostring(HEIGHT)
+            .. " up " .. math.floor(sys.now() / 60) .. "m img " .. n
+        res.label:write(10, HEIGHT - 95, diag_cfg, 36, 1, 1, 0, 1)
+        res.label:write(10, HEIGHT - 50, live, 36, 1, 1, 0, 1)
+    end)
 end
