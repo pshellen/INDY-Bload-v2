@@ -191,7 +191,7 @@
         "ui_width": 4,
         "name": "rotation_method",
         "type": "select",
-        "hint": "Player: info-beamer rotates the screen using the device rotation (default). Package: set the device rotation to 0/none and pick the board rotation in Default rotation above; the package turns the board itself. Use this for players that go black in portrait.",
+        "hint": "Package: keep the device rotation at 0 and set Default rotation above; the board is turned by this package. Use it on players that go black in portrait.",
         "options": [
             ["player", "Player (default)"],
             ["package", "Package"]
