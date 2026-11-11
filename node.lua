@@ -36,13 +36,52 @@ local badge_3d = mipmapped_image("3D.png")
 local badge_green = resource.create_colored_texture(0.02, 0.55, 0.18, 1)
 local badge_blue = resource.create_colored_texture(2/255, 122/255, 193/255, 1)
 
-local res = util.resource_loader({
+local raw_res = util.resource_loader({
     "font.ttf";
     "times.ttf";
     "label.ttf";
     "threed.png";
     "showtime.png";
 }, {})
+
+-- Font sizes -------------------------------------------------------------------
+-- info-beamer caches every glyph at every size it is drawn or measured at in
+-- one shared "font atlas" texture and doubles it when full. The fitting loops
+-- here try sizes 1px at a time, which pushed the atlas past 4096x4096: on a
+-- Pi 3 that is "CRITICAL ERROR: Cannot alloc texture" (player crashes and
+-- restarts every minute) or text turning into white blocks. Every size is
+-- therefore snapped down to this short ladder, capped at the top.
+local FONT_SIZES = {10, 12, 14, 16, 18, 20, 23, 26, 30, 34, 38, 43, 48, 54, 61, 68, 76, 86, 96}
+local function snap_size(size)
+    size = tonumber(size) or FONT_SIZES[1]
+    local snapped = FONT_SIZES[1]
+    for _, v in ipairs(FONT_SIZES) do
+        if v <= size then snapped = v else break end
+    end
+    return snapped
+end
+
+local FONT_NAMES = {font = true, times = true, label = true}
+local font_proxies = setmetatable({}, {__mode = "k"})
+local res = setmetatable({}, {__index = function(_, name)
+    local obj = raw_res[name]
+    if not FONT_NAMES[name] or obj == nil then
+        return obj
+    end
+    local proxy = font_proxies[obj]
+    if not proxy then
+        proxy = {
+            write = function(self, x, y, text, size, ...)
+                return obj:write(x, y, text, snap_size(size), ...)
+            end,
+            width = function(self, text, size)
+                return obj:width(text, snap_size(size))
+            end,
+        }
+        font_proxies[obj] = proxy
+    end
+    return proxy
+end})
 
 local bgfill = resource.create_colored_texture(0,0,0,1)
 local fgfill = resource.create_colored_texture(.1,.1,.1,1)
