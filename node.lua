@@ -75,6 +75,12 @@ local res = setmetatable({}, {__index = function(_, name)
                 return obj:write(x, y, text, snap_size(size), ...)
             end,
             width = function(self, text, size)
+                size = tonumber(size) or FONT_SIZES[1]
+                if size < FONT_SIZES[1] then
+                    -- tiny sizes are only used to get a per-pixel width
+                    -- (e.g. best_grid measures at size 1): scale linearly
+                    return obj:width(text, FONT_SIZES[1]) * size / FONT_SIZES[1]
+                end
                 return obj:width(text, snap_size(size))
             end,
         }
