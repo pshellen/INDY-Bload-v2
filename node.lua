@@ -6,6 +6,8 @@
 
 util.no_globals()
 
+gl.setup(1920, 1080) -- replaced by the rotation-aware size once config.json loads
+
 local json = require "json"
 
 
@@ -13,6 +15,47 @@ local st
 local image_files = {}
 local loaded_images = {}
 local rotation = 0
+
+-- GPU texture cache ------------------------------------------------------------
+-- Every title art / banner used to stay in GPU memory forever. On a Pi 3 that
+-- fills the GPU after a few pages and the player hangs and reboots. Now each
+-- texture remembers when it was last used and is disposed once it has been
+-- off screen for a while (the next page is preloaded, see node.render).
+local image_last_used = {}
+local release_all_images
+local IMAGE_IDLE_SECONDS = 15
+
+local function touch_image(key)
+    image_last_used[key] = sys.now()
+end
+
+local function dispose_image(img)
+    if img then pcall(img.dispose, img) end
+end
+
+release_all_images = function()
+    for key, img in pairs(loaded_images) do dispose_image(img) end
+    loaded_images = {}
+    image_last_used = {}
+end
+
+local last_evict = 0
+local function evict_idle_images()
+    local now = sys.now()
+    if now - last_evict < 2 then return end
+    last_evict = now
+    local freed = 0
+    for key, img in pairs(loaded_images) do
+        -- 'false' marks a file that failed to load; keep that so we don't retry every frame
+        if img and now - (image_last_used[key] or 0) > IMAGE_IDLE_SECONDS then
+            dispose_image(img)
+            loaded_images[key] = nil
+            image_last_used[key] = nil
+            freed = freed + 1
+        end
+    end
+    if freed > 0 then node.gc() end
+end
 local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
@@ -259,14 +302,14 @@ local bload = (function()
         data_source = "indy"
     end
 
-    local function get_paged_movies()
+    local function get_paged_movies(page_offset)
         local per_page = display_cfg.movies_per_page or 4
         if data_source ~= "indy" or #sorted_movies <= per_page then
             return sorted_movies, math.max(#sorted_movies, 1)
         end
         local pages = math.max(1, math.ceil(#sorted_movies / per_page))
         local interval = math.max(1, display_cfg.page_interval or 5)
-        local page = math.floor(sys.now() / interval) % pages
+        local page = (math.floor(sys.now() / interval) + (page_offset or 0)) % pages
         local start_idx = page * per_page + 1
         local out = {}
         for i = start_idx, math.min(start_idx + per_page - 1, #sorted_movies) do
@@ -319,9 +362,7 @@ end)()
 
 util.json_watch("config.json", function(config)
     image_files = {}
-    loaded_images = {}
-
-    gl.setup(1920, 1080)
+    release_all_images()
 
     rotation = config.rotation or 0
     local setup_rotation = config.__metadata.device_data.rotation
@@ -329,6 +370,14 @@ util.json_watch("config.json", function(config)
         rotation = setup_rotation
     end
 
+    -- util.screen_transform only rotates the drawing; it does not swap
+    -- WIDTH/HEIGHT. On a 90/270 device the virtual screen itself must be
+    -- portrait or the whole layout is sized for landscape and turned sideways.
+    if rotation == 90 or rotation == 270 then
+        gl.setup(1080, 1920)
+    else
+        gl.setup(1920, 1080)
+    end
     st = util.screen_transform(rotation)
 
     for _, image in ipairs(config.images) do
@@ -874,6 +923,7 @@ local function movie_image(movie, cfg)
     if image == false then
         return
     end
+    touch_image(movie.image)
     if not image then
         local ok, img = pcall(resource.load_image, { file = file:copy(), mipmap = true })
         if not ok then
@@ -945,6 +995,7 @@ local function movie_banner(movie, cfg)
     local key = "banner:" .. movie.banner
     local img = loaded_images[key]
     if img == false then return end
+    touch_image(key)
     if not img then
         local ok, loaded = pcall(resource.load_image, movie.banner)
         if not ok then
@@ -1435,5 +1486,16 @@ function node.render()
         end
     else
         show_bload()
+        -- start loading the next page's art now so it is ready when the page
+        -- flips (also keeps those textures from being evicted)
+        local cfg = bload.get_display_cfg()
+        for _, movie in ipairs(bload.get_paged_movies(1)) do
+            if find_image_file(movie.image) then
+                movie_image(movie, cfg)
+            else
+                movie_banner(movie, cfg)
+            end
+        end
     end
+    evict_idle_images()
 end
